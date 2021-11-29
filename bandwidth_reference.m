@@ -1,4 +1,5 @@
 clear all
+warning('off');
 
 % PD Controller
 P = 15;
@@ -9,6 +10,8 @@ FF = 0;
 % Motor
 Jm = 0.0064;
 dm = 0.0068;
+saturation = 2.26; % A
+u_sat = saturation;
 
 % Series Spring
 Ks = 12.04;
@@ -24,9 +27,6 @@ Ke = 1e-2;
 Je = 1e-1;
 Be = 2 * sqrt(Ke * Je);
 
-sweep_amplitude = 1;
-sweep_duration = 10;
-sweep_max_freq = 10;
 start_T = 0;
 end_T = 10;
 duration = end_T - start_T;
@@ -38,7 +38,7 @@ amplitude = 1;
 %% Saturation experiments with PD + Simple DC Motor model (Position Control)
 s = tf('s');
 M = 1 / (Jm * s^2 + dm * s);
-C = P + I / s;
+C = P + D*s;
 
 L = C * M;
 
@@ -57,34 +57,130 @@ t = linspace(start_T, end_T, duration/dt);
 sweep = amplitude * sin(2*pi*t.*(start_freq + ((end_freq-start_freq)/(duration))*t ));
 freq = (start_freq + ((end_freq-start_freq)/(duration))*t);
 
-% Calculate the scaling factor for the modified sweep
-n = -1;
-for i=1:length(freq)
-   factor(i) = real(freqresp(CS,2*pi*freq(i)));
-   if factor(i) <= 1
-    factor(i) = 1;
-   else
-    if n == -1
-        fprintf("scaling frequency = %sHz\n", freq(i));
-        n = i; % step at which I need to scale my reference signal
-    end
-    factor(i) = amplitude-((amplitude-amplitude/4)/(length(freq)-n))*(i-n);
+for i = 1:length(freq) 
+    [mag,~] = bode(u_sat/CS, 2*pi*freq(i));
+    limit(i) = mag;
+end
+
+sweep_expected = limit .* sin(2*pi*t.*freq);
+
+epsilon = 0.2;
+saturation_reached_at = -1;
+for i = 1:length(sweep)
+   if (sweep(i) > 0 && sweep(i) > sweep_expected(i) + epsilon)
+       saturation_reached_at = i;
+       break;
+   end
+   if (sweep(i) < 0 && sweep(i) < sweep_expected(i) - epsilon)
+       saturation_reached_at = i;
+       break;
    end
 end
-modified_sweep = sweep.*factor;
 
-% Plot the modified sweep vs original sweep
+% Plot the expected sweep vs original sweep
 figure;
 subplot(211);
 plot(t,sweep);
 xlabel('time');
 ylabel('amplitude position rad');
 title('original signal');
+if (saturation_reached_at > 0)
+    xline(t(saturation_reached_at),'-',{'Saturation','Limit'});
+end
 subplot(212);
-plot(t,modified_sweep);
-title('scaled signal');
+plot(t,sweep_expected);
+title('expected limited aware signal');
 xlabel('time');
 ylabel('amplitude position rad');
+if (saturation_reached_at > 0)
+    xline(t(saturation_reached_at),'-',{'Saturation','Limit'});
+end
+
+modified_sweep = sweep;
+if (saturation_reached_at > 0)
+    modified_sweep(saturation_reached_at:end) = sweep_expected(saturation_reached_at:end);
+end
+
+% Plot the modified sweep to take into account saturation
+figure;
+plot(t,modified_sweep);
+title('modified sweep to take into account saturation');
+xlabel('time');
+ylabel('amplitude position rad');
+
+%% Basic Force Control
+h = 100;                                       % Stiff environment
+G = 1 / ((Jm/h)*s^2 + (dm/h)*s + 1);           % Motor
+C = P + D*s + I/s;                             % PID control
+
+L = C * G;
+CS = C / (1 + L);
+T = L / (1 + L);
+
+options = bodeoptions;
+options.FreqUnits = 'Hz';
+figure;
+bode(CS, T, options);
+title('Force control noise sensitivity and complementary sensitivity functions');
+legend('Noise Sensitivity', 'Complementary Sensitivity');
+
+% Calculate the sweep function 
+t = linspace(start_T, end_T, duration/dt);
+sweep = amplitude * sin(2*pi*t.*(start_freq + ((end_freq-start_freq)/(duration))*t ));
+freq = (start_freq + ((end_freq-start_freq)/(duration))*t);
+
+for i = 1:length(freq) 
+    [mag,~] = bode(u_sat/CS, 2*pi*freq(i));
+    limit(i) = mag;
+end
+
+sweep_expected = limit .* sin(2*pi*t.*freq);
+
+epsilon = 0.2;
+saturation_reached_at = -1;
+for i = 1:length(sweep)
+   if (sweep(i) > 0 && sweep(i) > sweep_expected(i) + epsilon)
+       saturation_reached_at = i;
+       break;
+   end
+   if (sweep(i) < 0 && sweep(i) < sweep_expected(i) - epsilon)
+       saturation_reached_at = i;
+       break;
+   end
+end
+
+% Plot the expected sweep vs original sweep
+figure;
+subplot(211);
+plot(t,sweep);
+xlabel('time');
+ylabel('amplitude force');
+title('original signal');
+if (saturation_reached_at > 0)
+    xline(t(saturation_reached_at),'-',{'Saturation','Limit'});
+end
+subplot(212);
+plot(t,sweep_expected);
+title('expected limited aware signal');
+xlabel('time');
+ylabel('amplitude force');
+if (saturation_reached_at > 0)
+    xline(t(saturation_reached_at),'-',{'Saturation','Limit'});
+end
+
+modified_sweep = sweep;
+if (saturation_reached_at > 0)
+    modified_sweep(saturation_reached_at:end) = sweep_expected(saturation_reached_at:end);
+end
+
+% Plot the modified sweep to take into account saturation
+figure;
+plot(t,modified_sweep);
+title('modified sweep to take into account saturation');
+xlabel('time');
+ylabel('amplitude position rad');
+
+
 
 %% Saturation experiments (SEA with link) (Force Control)
 
@@ -103,5 +199,61 @@ options = bodeoptions;
 options.FreqUnits = 'Hz';
 figure;
 bode(CS, T, options);
-title('SEA with link force control noise sensitivity and complementary sensitivity functions');
+title('Force control SEA with link noise sensitivity and complementary sensitivity functions');
 legend('Noise Sensitivity', 'Complementary Sensitivity');
+
+% Calculate the sweep function 
+t = linspace(start_T, end_T, duration/dt);
+sweep = amplitude * sin(2*pi*t.*(start_freq + ((end_freq-start_freq)/(duration))*t ));
+freq = (start_freq + ((end_freq-start_freq)/(duration))*t);
+
+for i = 1:length(freq) 
+    [mag,~] = bode(u_sat/CS, 2*pi*freq(i));
+    limit(i) = mag;
+end
+
+sweep_expected = limit .* sin(2*pi*t.*freq);
+
+epsilon = 0.2;
+saturation_reached_at = -1;
+for i = 1:length(sweep)
+   if (sweep(i) > 0 && sweep(i) > sweep_expected(i) + epsilon)
+       saturation_reached_at = i;
+       break;
+   end
+   if (sweep(i) < 0 && sweep(i) < sweep_expected(i) - epsilon)
+       saturation_reached_at = i;
+       break;
+   end
+end
+
+% Plot the expected sweep vs original sweep
+figure;
+subplot(211);
+plot(t,sweep);
+xlabel('time');
+ylabel('amplitude force');
+title('original signal');
+if (saturation_reached_at > 0)
+    xline(t(saturation_reached_at),'-',{'Saturation','Limit'});
+end
+subplot(212);
+plot(t,sweep_expected);
+title('expected limited aware signal');
+xlabel('time');
+ylabel('amplitude force');
+if (saturation_reached_at > 0)
+    xline(t(saturation_reached_at),'-',{'Saturation','Limit'});
+end
+
+modified_sweep = sweep;
+if (saturation_reached_at > 0)
+    modified_sweep(saturation_reached_at:end) = sweep_expected(saturation_reached_at:end);
+end
+
+% Plot the modified sweep to take into account saturation
+figure;
+plot(t,modified_sweep);
+title('modified sweep to take into account saturation');
+xlabel('time');
+ylabel('amplitude position rad');

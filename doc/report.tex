@@ -1,16 +1,17 @@
-\documentclass[a4paper,12pt]{article}
+\documentclass[a4paper,11pt]{article}
 \usepackage[T1]{fontenc}
 \usepackage{fullpage,graphicx,psfrag,amsmath,amsfonts}
-\usepackage[small,bf]{caption}
 \usepackage[utf8]{inputenc}
 \usepackage[english]{babel}
 \usepackage{lipsum}
 \usepackage{url}
 \usepackage{bm}
 \usepackage{float}
-\usepackage{times}
 \usepackage{enumitem}
-\setitemize{noitemsep,topsep=0pt,parsep=0pt,partopsep=0pt}
+\usepackage{kpfonts}
+\usepackage{mathpazo}
+% \usepackage{libertin}
+% \usepackage{newtxmath}
 \begin{document}
 \author{Filippo Grotto VR460638}
 
@@ -51,7 +52,45 @@ In our case let's consider a basic position control architecture for a simplifie
 \label{fig:control}
 \end{figure}
 
-\noindent Our aim is to replace the input with a correctly scaled sinusoidal function that guarantees that motor saturation is not exceeded during the experiment. The PD controller can be tuned as you prefer and the motor inertia $Jm$ and motor damping $dm$ are assumed to be known.
+\noindent Our aim is to replace the input with a correctly scaled sinusoidal function that guarantees that motor saturation is not exceeded during the experiment. The PD controller can be tuned as you prefer and the motor inertia $Jm$ and motor damping $dm$ are assumed to be known. 
+
+\bigskip
+\noindent The basic idea is to use the $CS(jw)$ function to figure out at which frequency based on the reference signal we start having a gain that is above 1 meaning that we are asking more to the physical motor. In fact in this case we are sending more current to the motor that might be close to the saturation
+
+\bigskip
+\noindent In table \ref{tab:motors} different values for physical motors are reported and we be used to evaluate our approach.
+
+\begin{table}[H]
+  \begin{tabular}{ |p{6.5cm}||p{4cm}|p{4cm}| }
+  \hline
+  Motor& dm & jm  \\
+  \hline
+  SVM linear           &0.813333&   0.821697\\
+  SVM poly             &0.820000&   0.826573\\
+  \hline
+\end{tabular}
+\caption{Different motors value identified}
+\label{tab:motors}
+\end{table}
+
+In Fig. \ref{fig:responses} the bode plot of the noise sensitivity function is reported
+
+\begin{figure}[H]
+\begin{center}
+\includegraphics[width=1.0\textwidth]{images/responses.png}
+\end{center}
+\caption{Bode plot of the position controller of the complementary sensitivity function and noise sensitivity function}
+\label{fig:responses}
+\end{figure}
+
+
+\begin{figure}[H]
+\begin{center}
+\includegraphics[width=0.9\textwidth]{images/signal.png}
+\end{center}
+\caption{Original vs scaled signal at a cutoff frequency of around 7.5Hz}
+\label{fig:signal}
+\end{figure}
   
 
 \begin{thebibliography}{9}
