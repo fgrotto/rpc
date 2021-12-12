@@ -5,23 +5,23 @@
 \usepackage[english]{babel}
 \usepackage{lipsum}
 \usepackage{url}
+\usepackage{amsmath}
 \usepackage{bm}
 \usepackage{float}
+\usepackage{fancyvrb}
 \usepackage{enumitem}
 \usepackage{kpfonts}
 \usepackage{mathpazo}
-% \usepackage{libertin}
-% \usepackage{newtxmath}
 \begin{document}
 \author{Filippo Grotto VR460638}
 
-\title{Bechmarking control algorithms with saturation aware references \\[1ex] \large Robot Programming and Control}
+\title{Bechmarking control algorithms with current saturation aware references \\[1ex] \large Robot Programming and Control}
 
 \maketitle
 \tableofcontents
 
 \section{Introduction}
-The aim of Forecast project \cite{Forecast} is to provide a testbed to benchmark control algorithms and get in this way comparable results especially in the context of force control algorithms. The procedure uses several performances indicators to assess the controller in use such as static error, dynamic error, overshoot and bandwidth. The latter is estimated using a sinusoidal function that increments frequency over time (e.g. 1 to 10Hz in 10 seconds) until we reach -3db over the desired reference. However this estimation suffers from the presence of saturation of the motor used to drive the experiments making the result about the controller not as general as we want. In the following section we will propose a method to reduce the amplitude of the reference signal before reaching the motor saturation in order to get a much more precise bandwidth estimation using general transfer function methods.
+The aim of Forecast project \cite{Forecast} is to provide a testbed to benchmark control algorithms and get in this way comparable results especially in the context of force control algorithms. The procedure uses several performances indicators to assess the controller in use such as static error, dynamic error, overshoot and bandwidth. The latter is estimated using a sinusoidal function that increments frequency over time (e.g. 1 to 10Hz in 10 seconds) until we reach -3db over the desired reference. However this estimation suffers from the presence of saturation of the motor used to drive the experiments making the result about the controller not as general as we want. In the following section we will propose a method to reduce the amplitude of the reference signal before reaching the motor saturation in order to get a much more precise bandwidth estimation using general transfer function methods in case of fully linear systems.
 
 \newpage
 \section{Noise Sensitivity Function}
@@ -29,69 +29,218 @@ If we consider the general feedback system in Fig.\ref{fig:feedback}. There are 
 
 \begin{figure}[H]
 \begin{center}
-\includegraphics[width=0.8\textwidth]{images/feedback.png}
+\includegraphics[width=1.0\textwidth]{images/feedback.png}
 \end{center}
-\caption{A general feedback system taken from \cite{scientist}}
+\caption{A general SISO feedback system taken from \cite{scientist}}
 \label{fig:feedback}
 \end{figure}
 
-\noindent We are actually interested in having the relation between the input of the system $r$ and the control input $u$ in order to have an idea of how the saturation is reached since we assume our $P(s)$ known (we can identify all the parameters of our DC motors).
+\noindent We are actually interested in having the relation between the input of the system $r$ and the control input $u$ in order to know when the current saturation is reached. We will assume our $P(s)$ plant known since we can identify all the parameters of our DC motors assuming it to be a linear system.
 \begin{equation}
-  CS(jw) = \frac{C(jw)}{1+C(jw)P(jw)}
+  CS(s) = \frac{C(s)}{1+C(s)P(s)}
 \end{equation}
 
-\section{Noise Sensitivity Responses}
+\noindent The procedure proposed for the current saturations is derived considering the motor saturation $u_{sat}$ usually provided in the datasheets:
+\begin{equation}
+  \frac{u}{u_{sat}} < 1
+  \label{eqn:current_sat}
+\end{equation}
 
-In our case let's consider a basic position control architecture for a simplified motor model (only the mechanical part is considered) as depicted in Fig \ref{fig:control}
+\noindent The equation \eqref{eqn:current_sat} holds since we want $u$ to not overcome the provided saturation. However a more strict condition can be imposed. We can then write:
+
+\begin{equation}
+  \frac{u}{u_{sat}} = CS(s) \frac{r}{u_{sat}}
+\end{equation}
+
+\noindent Considering the worst case scenario when $u/u_{sat}=1$ we can derive:
+
+\begin{equation}
+  r < \frac{u_{sat}}{CS(s)}
+  \label{eqn:saturation_limit}
+\end{equation}
+
+\noindent Note that equation \eqref{eqn:saturation_limit} uses mixed time and laplace domain notations. In the following sections only the magnitude of the transfer function will be considered. 
+
+\newpage
+\section{Control Architectures}
+
+Our aim is to replace the input of the different architectures with a correctly scaled sinusoidal function (sweep) which guarantees that motor saturation is not exceeded during the simulated experiment. To do so the signal is firstly processed by some matlab code which scaled it using the presented equations secondly the simulink model is considered using the generated signal and current/tau is considered. 
+\bigskip
+
+\noindent The following code was used to generate the reference signal:
+
+\begin{Verbatim}[fontsize=\small]
+function [sweep, suggested_sweep, t] = reference_signal(start_T, 
+                                                        end_T, 
+                                                        start_freq, 
+                                                        end_freq, 
+                                                        duration, 
+                                                        amplitude, 
+                                                        u_sat, 
+                                                        CS, 
+                                                        dt)
+
+  t = linspace(start_T, end_T, duration/dt);
+  sweep = amplitude * sin(2*pi*t.*(start_freq + ((end_freq-start_freq)/(duration))*t ));
+  freq = (start_freq + ((end_freq-start_freq)/(duration))*t);
+
+  for i = 1:length(freq) 
+      [mag,~] = bode(u_sat/CS, 2*pi*freq(i));
+      limit(i) = mag;
+  end
+
+  sweep_expected = limit .* sin(2*pi*t.*freq);
+
+  epsilon = 0.2;
+  saturation_reached_at = -1;
+  for i = 1:length(sweep)
+     if (sweep(i) > 0 && sweep(i) > sweep_expected(i) + epsilon)
+         saturation_reached_at = i;
+         break;
+     end
+     if (sweep(i) < 0 && sweep(i) < sweep_expected(i) - epsilon)
+         saturation_reached_at = i;
+         break;
+     end
+  end
+  
+  suggested_sweep = sweep;
+  if (saturation_reached_at > 0)
+      suggested_sweep(saturation_reached_at:end) = sweep_expected(saturation_reached_at:end);
+  end
+end
+\end{Verbatim}
+
+\newpage
+
+\subsection{Parameters Used}
+
+\bigskip
+The parameters used for the motor comes from direct identification of a maxon DCX22L, in particular $J_m = 0.0064$, $d_m = 0.0068$, $K_t = 1.46$ and $u_{sat} = 2.26$. The controller used for all the architectures is a PID/PD controller with different parameters. To give and example $P = 15$, $D = 0.1$ and $I = 0.1$. In the force control case the stiffness of the environment was considered $h = 100$.
+
+\bigskip
+\subsection{Position Control}
+Let's consider a basic position control architecture for a linear motor model considering only the mechanical subsystem as depicted in Fig \ref{fig:position_control}
+
 
 \begin{figure}[H]
 \begin{center}
 \includegraphics[width=1\textwidth]{images/position.png}
 \end{center}
-\caption{Simulink model of a basic position control architecture}
-\label{fig:control}
+\caption{Simulink model of position control architecture}
+\label{fig:position_control}
 \end{figure}
 
-\noindent Our aim is to replace the input with a correctly scaled sinusoidal function that guarantees that motor saturation is not exceeded during the experiment. The PD controller can be tuned as you prefer and the motor inertia $Jm$ and motor damping $dm$ are assumed to be known. 
+\bigskip
+\noindent The related equations of the plant $P_l$ and the PD controller $C$ are:
+
+\[
+P_l = \frac{1}{J_m s^2 + d_m s} \qquad
+C = P + Ds
+\]
 
 \bigskip
-\noindent The basic idea is to use the $CS(jw)$ function to figure out at which frequency based on the reference signal we start having a gain that is above 1 meaning that we are asking more to the physical motor. In fact in this case we are sending more current to the motor that might be close to the saturation
+\noindent The two transfer functions $T(S)$ ($r$ to $y$) and $CS(s)$ ($r$ to $u$) are presented in Fig \ref{fig:position_tf} and the related original and suggested reference signal are reported in Fig \ref{fig:position_ref}. As it is visible the suggested approach is pretty aggressive especially due to the $epsilon$ considered in the $reference\_signal$ function presented above, moreover we are considering a worst case scenario.
 
-\bigskip
-\noindent In table \ref{tab:motors} different values for physical motors are reported and we be used to evaluate our approach.
-
-\begin{table}[H]
-  \begin{tabular}{ |p{6.5cm}||p{4cm}|p{4cm}| }
-  \hline
-  Motor& dm & jm  \\
-  \hline
-  SVM linear           &0.813333&   0.821697\\
-  SVM poly             &0.820000&   0.826573\\
-  \hline
-\end{tabular}
-\caption{Different motors value identified}
-\label{tab:motors}
-\end{table}
-
-In Fig. \ref{fig:responses} the bode plot of the noise sensitivity function is reported
 
 \begin{figure}[H]
 \begin{center}
-\includegraphics[width=1.0\textwidth]{images/responses.png}
+\includegraphics[width=0.8\textwidth]{images/position_tf.eps}
 \end{center}
-\caption{Bode plot of the position controller of the complementary sensitivity function and noise sensitivity function}
-\label{fig:responses}
+\caption{Position control bode plot of the complementary sensitivity function and noise sensitivity function}
+\label{fig:position_tf}
 \end{figure}
 
 
 \begin{figure}[H]
 \begin{center}
-\includegraphics[width=0.9\textwidth]{images/signal.png}
+\includegraphics[width=0.8\textwidth]{images/position_scaled.eps}
 \end{center}
-\caption{Original vs scaled signal at a cutoff frequency of around 7.5Hz}
-\label{fig:signal}
+\caption{original and scaled sweep with amplitude 4 rad}
+\label{fig:position_ref}
 \end{figure}
-  
+
+\noindent The obtained $tau$ provided to the motor in the position control simulink model is the following:
+
+\begin{figure}[H]
+\begin{center}
+\includegraphics[width=1.0\textwidth]{images/position_tau.eps}
+\end{center}
+\caption{tau signal provided to the motor in the position control}
+\label{fig:position_tau}
+\end{figure}
+
+\newpage
+\subsection{Force Control}
+Let's consider a basic force control architecture for a linear motor model considering only the mechanical subsystem. The related equations of the plant $P_l$ and the PD controller $C$ are:
+
+\[
+G = \frac{1}{\frac{J_m}{h}s^2 + \frac{d_m}{h}s + 1} \qquad
+C = P + Ds + \frac{I}{s};                             
+\]
+
+\bigskip
+\noindent The two transfer functions $T(S)$ ($r$ to $y$) and $CS(s)$ ($r$ to $u$) are presented in Fig \ref{fig:force_tf} and the related original and suggested reference signal are reported in Fig \ref{fig:force_ref}. As it is visible the suggested approach is pretty aggressive especially due to the $epsilon$ considered in the $reference\_signal$ function presented above, moreover we are considering a worst case scenario.
+
+\bigskip
+\begin{figure}[H]
+\begin{center}
+\includegraphics[width=1.0\textwidth]{images/force_tf.eps}
+\end{center}
+\caption{Force control bode plot of the complementary sensitivity function and noise sensitivity function}
+\label{fig:force_tf}
+\end{figure}
+
+
+\begin{figure}[H]
+\begin{center}
+\includegraphics[width=0.8\textwidth]{images/force_scaled.eps}
+\end{center}
+\caption{original and scaled sweep for the force reference. As it is visible we have a different behaviour than the position control due to a completly different $CS(s)$ transfer function}
+\label{fig:force_ref}
+\end{figure}
+
+\noindent The obtained $tau$ provided to the motor in the position control simulink model is the following:
+
+\begin{figure}[H]
+\begin{center}
+\includegraphics[width=0.8\textwidth]{images/force_tau.eps}
+\end{center}
+\caption{tau signal provided to the motor in the force control}
+\label{fig:force_tau}
+\end{figure}
+
+\section{Limitations}
+
+The current approach based on the use of the transfer function $CS(s)$ has lots of limitations:
+\begin{itemize}
+  \item The approach assumes full knowledge of the considered system, everything has to be identified correctly and this is even a bigger limitation for force control because we don't have informations about the environment which makes the use of the transfer functions not reliable at all.
+  \item We assume a linear system which is a big limitation since it doesn't consider non-linear behaviours of the DC motors. For this cases having at least one real experiment to validate the data is a must.
+  \item The use of $CS(s)$ is not reliable in some scenarios due to accentuated shapes of the transfer function in Fig \ref{fig:sea_tf} the transfer function of a SEA with links is reported as well as its relevant equations.
+\end{itemize}
+
+\begin{figure}[H]
+\begin{center}
+\includegraphics[width=0.8\textwidth]{images/sea_tf.eps}
+\end{center}
+\caption{SEA with link force control bode plot of the complementary sensitivity function and noise sensitivity function}
+\label{fig:sea_tf}
+\end{figure}
+
+\[
+  r = \frac{Ks}{Ke} \qquad
+  E = \frac{J_e}{K_e}s^2 + \frac{B_e}{K_e}s + 1;
+\]\[
+  F = \frac{E}{(E + r)\frac{J_m}{K_s}s^2 + E} \qquad
+  C = P + Ds;    
+\]
+
+\section{Other approaches}
+
+Simulating the experiments in simulink is in general a good way to verify the presence of saturation but it is affected by the same problems related to prior knowledge and linear behaviours (at least without implementing a non-linear system). A good way to generate a current saturation aware reference signal is adapting the reference in real time by reading directly the current provided to the motor. If this exceeds a certain threasold just drop a certain percentange. With this approach we can't know a priori the "amplitude shape" of the signal but it will be recovered after the experiments (using the log captured by the Forecast system). The bandwith estimation can be performed using the Matlab toolbox over that data.
+
+\section{Conclusions}
+The report is an attempt to provide a way to generate current saturation aware signals using noise sensitivity trasfer function. The basic idea was provided as well as some simulation results. The main limitations and other possibilities were discussed and analysed.
 
 \begin{thebibliography}{9}
 
