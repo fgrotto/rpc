@@ -1,30 +1,24 @@
 clear all
 % PD Controller
 P = 15;
-D = 0.1;
-I = 0.1;
+D = 0.9;
+I = 1;
 FF = 0;
 
 % Motor
-Jm = 0.0064;
+Jm = 0.0104;
 dm = 0.0068;
-saturation = 2.26; % A
-kt = 1.46; % mNm/inv(A)
+saturation = 2.26;
+kt = 1.5038;
+gear = 103;
 u_sat = saturation;
-
-% Series Spring
-Ks = 12.04;
-
-% Link
-Jl = 0.02; % inertia
-Bl = 0.1; % friction
-Kl = 100; % stiffness
+v_sat = 18; %V
+R = 0.68;
 
 % Environment
 qe = 0;
-Ke = 1e-2;
-Je = 1e-1;
-Be = 2 * sqrt(Ke * Je);
+Ke = 20;
+Be = 2 * sqrt(Ke * 0.0001);
 
 start_T = 0;
 end_T = 10;
@@ -49,38 +43,66 @@ var.time=[t'];
 var.signals.values=[suggested_sweep'];
 var.signals.dimensions=[1];
 
-%% Basic Force Control
-h = 100;                                       % Stiff environment
-G = 1 / ((Jm/h)*s^2 + (dm/h)*s + 1);           % Motor
-C = P + D*s + I/s;                             % PID control
-
-L = C * G;
+%% Saturation experiments with PI + Simple DC Motor model (Velocity Control)
+s = tf('s');
+P = 1;
+I = 0.2;
+M = 1 / (Jm * s + dm);
+C = P + I/s;
+L = C * M;
 CS = C / (1 + L);
 T = L / (1 + L);
 
 [sweep, suggested_sweep, t] = reference_signal(start_T, end_T, start_freq, end_freq, duration, amplitude, u_sat, CS, dt);
-show_plots(CS, T, t, sweep, suggested_sweep, 'Force Control Basic');
+show_plots(CS, T, t, sweep, suggested_sweep, 'Velocity Control');
+
+var.time=[t'];
+var.signals.values=[sweep'];
+var.signals.dimensions=[1];
+
+%% Saturation experiments with PD + Simple DC Motor model (Cascaded Position Control)
+s = tf('s');
+Cv = (0.9*(s+39.08))/s;
+r = 1;
+Kt = 0.0705*r; 
+Im = 0.0003*r^2;
+Fm = 0.00001*r^2; 
+Kv = 1/(2*pi*135/60)*r;
+Ra = 0.343;
+La = 0.000264;
+
+fw_path = Kt / ((s*La + Ra) * (s*Im + Fm));
+fb_path = Kv;
+Gv = feedback(fw_path, fb_path);
+Gv = minreal(Gv);
+Gp = ((Cv*Gv)/(1+Cv*Gv))*(1/s);
+Gp = minreal(Gp);
+
+C = (241.1*(s+986.4))/(s+4281);
+L = C * Gp;
+CS = C / (1 + L);
+T = L / (1 + L);
+
+[sweep, suggested_sweep, t] = reference_signal(start_T, end_T, start_freq, end_freq, duration, amplitude, u_sat, CS, dt);
+show_plots(CS, T, t, sweep, suggested_sweep, 'Cascaded Control');
 
 var.time=[t'];
 var.signals.values=[suggested_sweep'];
 var.signals.dimensions=[1];
 
-%% Saturation experiments (SEA with link) (Force Control)
-
+%% Simple Force Control with PD+FF
 s = tf('s');
-r = Ks / Ke;
-E = (Je / Ke) * s^2 + (Be / Ke) * s + 1;
-F = E / ((E + r) * (Jm / Ks) * s^2 + E);
-C = P + D * s;
 
-L = C * F;
+h = 100;                                       % Stiff environment
+G = 1 / ((Jm/h)*s^2 + (dm/h)*s + 1);           % Motor
+C = P + D*s;                                   % PD control
 
-CS = C / (1 + L);
-T = L / (1 + L);
+T = (G*(C+1)) / (1+G*C);
+CS = 1+C-((G*C*(1+C))/(1+C*G));
 
 [sweep, suggested_sweep, t] = reference_signal(start_T, end_T, start_freq, end_freq, duration, amplitude, u_sat, CS, dt);
-show_plots(CS, T, t, sweep, suggested_sweep, 'Force Control SEA with link');
+show_plots(CS, T, t, sweep, suggested_sweep, 'Force Control Basic');
 
 var.time=[t'];
-var.signals.values=[suggested_sweep'];
+var.signals.values=[sweep'];
 var.signals.dimensions=[1];

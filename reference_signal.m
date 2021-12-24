@@ -4,13 +4,13 @@ function [sweep, suggested_sweep, t] = reference_signal(start_T, end_T, start_fr
     freq = (start_freq + ((end_freq-start_freq)/(duration))*t);
 
     for i = 1:length(freq) 
-        [mag,~] = bode(u_sat/CS, 2*pi*freq(i));
+        [mag,~] = bode(u_sat/CS, freq(i));
         limit(i) = mag;
     end
 
     sweep_expected = limit .* sin(2*pi*t.*freq);
 
-    epsilon = 0.2;
+    epsilon = 0.001;
     saturation_reached_at = -1;
     for i = 1:length(sweep)
        if (sweep(i) > 0 && sweep(i) > sweep_expected(i) + epsilon)

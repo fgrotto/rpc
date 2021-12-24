@@ -7,10 +7,13 @@
 \usepackage{url}
 \usepackage{amsmath}
 \usepackage{bm}
+\usepackage{listings}
 \usepackage{float}
 \usepackage{fancyvrb}
 \usepackage{enumitem}
 \usepackage{kpfonts}
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows}
 \usepackage{mathpazo}
 \begin{document}
 \author{Filippo Grotto VR460638}
@@ -69,29 +72,25 @@ Our aim is to replace the input of the different architectures with a correctly 
 
 \noindent The following code was used to generate the reference signal:
 
-\begin{Verbatim}[fontsize=\small]
-function [sweep, suggested_sweep, t] = reference_signal(start_T, 
-                                                        end_T, 
-                                                        start_freq, 
-                                                        end_freq, 
-                                                        duration, 
-                                                        amplitude, 
-                                                        u_sat, 
-                                                        CS, 
-                                                        dt)
+\begin{lstlisting}[basicstyle=\small]
+  function [sweep, suggested_sweep, t] = reference_signal(start_T, end_T, start_freq, 
+                      end_freq, duration, amplitude, u_sat, CS, dt)
 
+
+  % Build the sweep function
   t = linspace(start_T, end_T, duration/dt);
-  sweep = amplitude * sin(2*pi*t.*(start_freq + ((end_freq-start_freq)/(duration))*t ));
+  sweep = amplitude * sin(2*pi*t.*(start_freq + (
+                (end_freq-start_freq)/(duration))*t));
   freq = (start_freq + ((end_freq-start_freq)/(duration))*t);
 
   for i = 1:length(freq) 
-      [mag,~] = bode(u_sat/CS, 2*pi*freq(i));
+      [mag,~] = bode(u_sat/CS, freq(i));
       limit(i) = mag;
   end
 
   sweep_expected = limit .* sin(2*pi*t.*freq);
 
-  epsilon = 0.2;
+  epsilon = 0.001;
   saturation_reached_at = -1;
   for i = 1:length(sweep)
      if (sweep(i) > 0 && sweep(i) > sweep_expected(i) + epsilon)
@@ -106,10 +105,12 @@ function [sweep, suggested_sweep, t] = reference_signal(start_T,
   
   suggested_sweep = sweep;
   if (saturation_reached_at > 0)
-      suggested_sweep(saturation_reached_at:end) = sweep_expected(saturation_reached_at:end);
+      suggested_sweep(saturation_reached_at:end) = sweep_expected(
+                                                      saturation_reached_at:end
+                                                      );
   end
 end
-\end{Verbatim}
+\end{lstlisting}
 
 \newpage
 
@@ -142,6 +143,7 @@ C = P + Ds
 \bigskip
 \noindent The two transfer functions $T(S)$ ($r$ to $y$) and $CS(s)$ ($r$ to $u$) are presented in Fig \ref{fig:position_tf} and the related original and suggested reference signal are reported in Fig \ref{fig:position_ref}. As it is visible the suggested approach is pretty aggressive especially due to the $epsilon$ considered in the $reference\_signal$ function presented above, moreover we are considering a worst case scenario.
 
+\noindent For simplicity only a case to fully understand the potential of this approach is reported. Other experiments can be performed to get familiar with how this approach works in real scenario. Moreover more sophisticated motor model with the electrical subsystem can be considered.
 
 \begin{figure}[H]
 \begin{center}
@@ -160,32 +162,71 @@ C = P + Ds
 \label{fig:position_ref}
 \end{figure}
 
-\noindent The obtained $tau$ provided to the motor in the position control simulink model is the following:
+\noindent Let's compare the different responses we obtain using the original and the scaled signal, finally let's compare the actual current of the motor (saturation at $u_{sat} = 2.26$) :
 
 \begin{figure}[H]
 \begin{center}
-\includegraphics[width=1.0\textwidth]{images/position_tau.eps}
+\hspace*{-5cm}
+\includegraphics[width=1.6\textwidth]{images/position_tau.eps}
 \end{center}
-\caption{tau signal provided to the motor in the position control}
+\caption{Comparison of the original position signal with the suggested saturation aware}
 \label{fig:position_tau}
+\end{figure}
+
+\noindent The important aspect that plays an important role is the tuning of the controller which have to be appropriate, a sample is reported in Fig \ref{fig:position_step_response}. In case of bad tuning the suggested signal will be strongly deamplified as a result of considering a worst case scenario.
+
+\begin{figure}[H]
+\begin{center}
+\includegraphics[width=0.4\textwidth]{images/position_step_resp.eps}
+\end{center}
+\caption{Step response of the system}
+\label{fig:position_step_response}
 \end{figure}
 
 \newpage
 \subsection{Force Control}
-Let's consider a basic force control architecture for a linear motor model considering only the mechanical subsystem. The related equations of the plant $P_l$ and the PD controller $C$ are:
+Let's consider a basic force control architecture for a linear motor model considering only the mechanical subsystem and a PD+FF controller. For simplicity only the environment stiffness $h$ (in rigid conditions):
+
+\begin{figure}[H]
+\begin{center}
+\includegraphics[width=1\textwidth]{images/force.png}
+\end{center}
+\caption{Simulink model of force control architecture}
+\label{fig:force_control}
+\end{figure}
+
+\noindent The related equations of the plant $P_l$ and the PD controller $C$ are:
 
 \[
 G = \frac{1}{\frac{J_m}{h}s^2 + \frac{d_m}{h}s + 1} \qquad
-C = P + Ds + \frac{I}{s};                             
+C = P + Ds;                             
 \]
 
 \bigskip
 \noindent The two transfer functions $T(S)$ ($r$ to $y$) and $CS(s)$ ($r$ to $u$) are presented in Fig \ref{fig:force_tf} and the related original and suggested reference signal are reported in Fig \ref{fig:force_ref}. As it is visible the suggested approach is pretty aggressive especially due to the $epsilon$ considered in the $reference\_signal$ function presented above, moreover we are considering a worst case scenario.
 
 \bigskip
+\noindent To derive the $CS$ trasfer function the following equations were considered:
+
+\[
+  \tau_m = \tau_{des} + C(\tau_{des} - \tau_e)
+\]
+\[
+  \tau_m = \tau_{des} + C\tau_{des} - \frac{CG(C+1)}{1+CG}\tau_{des}
+\]
+\[
+  \tau_m = \bigg(1 + C - \frac{CG(1+C)}{1+CG}\bigg)\tau_{des}
+\]
+
+We can easily recognize $T$ as:
+\[
+  \tau_e = \frac{CG(1+C)}{1+CG}\tau_{des}
+\]
+
+\bigskip
 \begin{figure}[H]
 \begin{center}
-\includegraphics[width=1.0\textwidth]{images/force_tf.eps}
+\includegraphics[width=0.8\textwidth]{images/force_tf.eps}
 \end{center}
 \caption{Force control bode plot of the complementary sensitivity function and noise sensitivity function}
 \label{fig:force_tf}
@@ -200,15 +241,16 @@ C = P + Ds + \frac{I}{s};
 \label{fig:force_ref}
 \end{figure}
 
-\noindent The obtained $tau$ provided to the motor in the position control simulink model is the following:
+\noindent Let's compare the different responses we obtain using the original and the scaled signal, finally let's compare the actual current of the motor (saturation at $u_{sat} = 2.26$) :
 
 \begin{figure}[H]
-\begin{center}
-\includegraphics[width=0.8\textwidth]{images/force_tau.eps}
-\end{center}
-\caption{tau signal provided to the motor in the force control}
-\label{fig:force_tau}
-\end{figure}
+  \begin{center}
+  \hspace*{-5cm}
+  \includegraphics[width=1.6\textwidth]{images/force_tau.eps}
+  \end{center}
+  \caption{Comparison of the original force signal with the suggested saturation aware}
+  \label{fig:force_tau}
+  \end{figure}
 
 \section{Limitations}
 
