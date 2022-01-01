@@ -40,7 +40,7 @@ T = L / (1 + L);
 show_plots(CS, T, t, sweep, suggested_sweep, 'Position Control');
 
 var.time=[t'];
-var.signals.values=[suggested_sweep'];
+var.signals.values=[sweep'];
 var.signals.dimensions=[1];
 
 %% Saturation experiments with PI + Simple DC Motor model (Velocity Control)
@@ -93,9 +93,11 @@ var.signals.dimensions=[1];
 %% Simple Force Control with PD+FF
 s = tf('s');
 
-h = 100;                                       % Stiff environment
-G = 1 / ((Jm/h)*s^2 + (dm/h)*s + 1);           % Motor
-C = P + D*s;                                   % PD control
+P = 1;
+D = 0.2;
+h = 100;                                     % Stiff environment
+G = 1 / ((Jm/h)*s^2 + (dm/h)*s + 1);         % Motor
+C = P + D*s;                                 % PD control
 
 T = (G*(C+1)) / (1+G*C);
 CS = 1+C-((G*C*(1+C))/(1+C*G));

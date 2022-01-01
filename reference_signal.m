@@ -4,10 +4,13 @@ function [sweep, suggested_sweep, t] = reference_signal(start_T, end_T, start_fr
     freq = (start_freq + ((end_freq-start_freq)/(duration))*t);
 
     for i = 1:length(freq) 
-        [mag,~] = bode(u_sat/CS, freq(i));
+        [mag,~] = bode(u_sat/CS, 2*pi*freq(i));
         limit(i) = mag;
     end
-
+    
+    figure;
+    plot(freq, limit);
+    title('Decay of signal over frequencies');
     sweep_expected = limit .* sin(2*pi*t.*freq);
 
     epsilon = 0.001;

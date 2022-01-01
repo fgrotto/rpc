@@ -32,7 +32,7 @@ If we consider the general feedback system in Fig.\ref{fig:feedback}. There are 
 
 \begin{figure}[H]
 \begin{center}
-\includegraphics[width=1.0\textwidth]{images/feedback.png}
+\includegraphics[width=0.6\textwidth]{images/feedback.png}
 \end{center}
 \caption{A general SISO feedback system taken from \cite{scientist}}
 \label{fig:feedback}
@@ -73,19 +73,18 @@ Our aim is to replace the input of the different architectures with a correctly 
 \noindent The following code was used to generate the reference signal:
 
 \begin{lstlisting}[basicstyle=\small]
-  function [sweep, suggested_sweep, t] = reference_signal(start_T, end_T, start_freq, 
-                      end_freq, duration, amplitude, u_sat, CS, dt)
+function [sweep, suggested_sweep, t] = reference_signal(start_T, end_T, 
+                start_freq, end_freq, duration, amplitude, u_sat, CS, dt)
 
 
-  % Build the sweep function
   t = linspace(start_T, end_T, duration/dt);
-  sweep = amplitude * sin(2*pi*t.*(start_freq + (
-                (end_freq-start_freq)/(duration))*t));
+  sweep = amplitude * sin(2*pi*t.*
+          (start_freq + ((end_freq-start_freq)/(duration))*t));
   freq = (start_freq + ((end_freq-start_freq)/(duration))*t);
 
   for i = 1:length(freq) 
-      [mag,~] = bode(u_sat/CS, freq(i));
-      limit(i) = mag;
+      [mag,~] = bode(u_sat/CS, 2*pi*freq(i));
+      limit(i) = exp(mag/20); % Exponential decay
   end
 
   sweep_expected = limit .* sin(2*pi*t.*freq);
@@ -105,9 +104,8 @@ Our aim is to replace the input of the different architectures with a correctly 
   
   suggested_sweep = sweep;
   if (saturation_reached_at > 0)
-      suggested_sweep(saturation_reached_at:end) = sweep_expected(
-                                                      saturation_reached_at:end
-                                                      );
+      suggested_sweep(saturation_reached_at:end) = 
+              sweep_expected(saturation_reached_at:end);
   end
 end
 \end{lstlisting}
@@ -156,13 +154,31 @@ C = P + Ds
 
 \begin{figure}[H]
 \begin{center}
-\includegraphics[width=0.8\textwidth]{images/position_scaled.eps}
+\includegraphics[width=0.8\textwidth]{images/decay.eps}
 \end{center}
-\caption{original and scaled sweep with amplitude 4 rad}
+\caption{Linear decay factor obtained from $u_{sat}/CS(s)$ in the range of frequencies 1Hz to 10Hz}
 \label{fig:position_ref}
 \end{figure}
 
-\noindent Let's compare the different responses we obtain using the original and the scaled signal, finally let's compare the actual current of the motor (saturation at $u_{sat} = 2.26$) :
+\newpage
+
+\subsubsection{Modulated reference with original decay}
+\noindent Let's try to see the result of this approach without smoothing of the magnitude decay. Originally the trasfer function $CS(s)$ tends to be really aggressive and cutting a lot of signal.
+
+\begin{figure}[H]
+\begin{center}
+\hspace*{-5cm}
+\includegraphics[width=1.6\textwidth]{images/position_tau2.eps}
+\end{center}
+\caption{Comparison of the original position signal with the suggested saturation aware one. In this case the original decay was used}
+\label{fig:position_tau}
+\end{figure}
+
+What is visible is the fact that the decay is pretty agressive and it starts at 2Hz which is pretty early considering practical experiences of the motor data provided. In the following section we will try a modulated decay to improve the performances based on experiments on the trasfer function.
+
+\newpage
+\subsubsection{Modulated reference with augmented decay}
+\noindent Let's compare the different responses we obtain using the original and the scaled signal, finally let's compare the actual current of the motor (saturation at $u_{sat} = 2.26$). The modulated decay is calculated as $modulated\_decay = exp(decay/20)$:
 
 \begin{figure}[H]
 \begin{center}
@@ -177,12 +193,12 @@ C = P + Ds
 
 \begin{figure}[H]
 \begin{center}
-\includegraphics[width=0.4\textwidth]{images/position_step_resp.eps}
+\includegraphics[width=0.3\textwidth]{images/position_step_resp.eps}
 \end{center}
 \caption{Step response of the system}
 \label{fig:position_step_response}
 \end{figure}
-
+  
 \newpage
 \subsection{Force Control}
 Let's consider a basic force control architecture for a linear motor model considering only the mechanical subsystem and a PD+FF controller. For simplicity only the environment stiffness $h$ (in rigid conditions):
@@ -279,7 +295,7 @@ The current approach based on the use of the transfer function $CS(s)$ has lots 
 
 \section{Other approaches}
 
-Simulating the experiments in simulink is in general a good way to verify the presence of saturation but it is affected by the same problems related to prior knowledge and linear behaviours (at least without implementing a non-linear system). A good way to generate a current saturation aware reference signal is adapting the reference in real time by reading directly the current provided to the motor. If this exceeds a certain threasold just drop a certain percentange. With this approach we can't know a priori the "amplitude shape" of the signal but it will be recovered after the experiments (using the log captured by the Forecast system). The bandwith estimation can be performed using the Matlab toolbox over that data.
+Simulating the experiments in simulink is in general a good way to verify the presence of saturation but it is affected by the same problems related to prior knowledge and linear behaviours (at least without implementing a non-linear system). A good way to generate a current saturation aware reference signal is adapting the reference in real time by reading directly the current provided to the motor. If this exceeds a certain threasold just drop a certain percentage. With this approach we can't know a priori the "amplitude shape" of the signal but it will be recovered after the experiments (using the log captured by the Forecast system). The bandwith estimation can be performed using the Matlab toolbox over that data.
 
 \section{Conclusions}
 The report is an attempt to provide a way to generate current saturation aware signals using noise sensitivity trasfer function. The basic idea was provided as well as some simulation results. The main limitations and other possibilities were discussed and analysed.
