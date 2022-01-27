@@ -1,19 +1,22 @@
-clear all
+clear all;
+close all;
+
 % PD Controller
-P = 15;
-D = 0.9;
+P = 2;
+D = 0;
 I = 1;
 FF = 0;
 
 % Motor
 Jm = 0.0104;
 dm = 0.0068;
-saturation = 2.26;
+saturation = 2;
 kt = 1.5038;
+kv = kt;
 gear = 103;
 u_sat = saturation;
 v_sat = 18; %V
-R = 0.68;
+Ra = 0.68;
 
 % Environment
 qe = 0;
@@ -26,21 +29,36 @@ duration = end_T - start_T;
 dt = 0.01;
 start_freq = 1;
 end_freq = 10;
-amplitude = 4;
+amplitude = 1;
+
+%% Saturation siciliano
+s = tf('s');
+C = P + D*s;
+CS = (kt)*((kt/Ra)*C) / (1+C*1*1/(Jm*s^2*dm*s)+kv*(1/(Jm*s+dm)));
+T = 1/s;
+
+[sweep, suggested_sweep, t] = reference_signal(start_T, end_T, start_freq, end_freq, duration, amplitude, u_sat, CS, dt);
+show_plots(CS, T, t, sweep, suggested_sweep, 'Position Control');
+
+lsim(CS,sweep,t);
+var.time=[t'];
+var.signals.values=[suggested_sweep'];
+var.signals.dimensions=[1];
+
 
 %% Saturation experiments with PD + Simple DC Motor model (Position Control)
 s = tf('s');
 M = 1 / (Jm * s^2 + dm * s);
 C = P + D*s;
 L = C * M;
-CS = C / (1 + L);
+CS = (1/kt) * C / (1 + L);
 T = L / (1 + L);
 
 [sweep, suggested_sweep, t] = reference_signal(start_T, end_T, start_freq, end_freq, duration, amplitude, u_sat, CS, dt);
 show_plots(CS, T, t, sweep, suggested_sweep, 'Position Control');
 
 var.time=[t'];
-var.signals.values=[sweep'];
+var.signals.values=[suggested_sweep'];
 var.signals.dimensions=[1];
 
 %% Saturation experiments with PI + Simple DC Motor model (Velocity Control)

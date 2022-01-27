@@ -1,18 +1,16 @@
-function [sweep, suggested_sweep, t] = reference_signal(start_T, end_T, start_freq, end_freq, duration, amplitude, u_sat, CS, dt)
-    t = linspace(start_T, end_T, duration/dt);
-    sweep = amplitude * sin(2*pi*t.*(start_freq + ((end_freq-start_freq)/(duration))*t ));
-    freq = (start_freq + ((end_freq-start_freq)/(duration))*t);
+function [sweep, suggested_sweep, t_sweep] = reference_signal(start_T, end_T, start_freq, end_freq, duration, amplitude, u_sat, CS, dt)    
+    t_sweep = start_T:dt:end_T;
+	m = end_freq / duration; % m = final_value/final_time
+	freq = (m)*t_sweep;
+    sweep = amplitude * sin(2*pi*t_sweep.*freq);
 
     for i = 1:length(freq) 
         [mag,~] = bode(u_sat/CS, 2*pi*freq(i));
         limit(i) = mag;
     end
     
-    figure;
-    plot(freq, limit);
-    title('Decay of signal over frequencies');
-    sweep_expected = limit .* sin(2*pi*t.*freq);
-
+    sweep_expected = limit .* sin(2*pi*t_sweep.*freq);
+    
     epsilon = 0.001;
     saturation_reached_at = -1;
     for i = 1:length(sweep)
