@@ -10,9 +10,9 @@ FF = 0;
 % Motor
 Jm = 0.0104;
 dm = 0.0068;
-saturation = 1.0;
 kt = 1.5038;
 kv = kt;
+saturation = 10 * kt;
 gear = 103;
 u_sat = saturation;
 v_sat = 18;
@@ -24,43 +24,38 @@ duration = end_T - start_T;
 dt = 0.001;
 start_freq = 1;
 end_freq = 6;
-amplitude = 1;
+amplitude = 5;
 
 s = tf('s');
 M = 1 / (Jm * s^2 + dm * s);
 C = P + D*s;
 L = C * M;
-CS = (kt/Ra) * C / (1 + L);
+CS = C / (1 + L);
 T = L / (1 + L);
 
-t = linspace(start_T, end_T, duration/dt);
-sweep = amplitude * sin(2*pi*t.*(start_freq + ((end_freq-start_freq)/(duration))*t));
-freq = (start_freq + ((end_freq-start_freq)/(duration))*t);
+t = start_T:dt:end_T;
+phaseInit = -90;
+method = 'linear';
+sweep = amplitude * chirp(t, start_freq, end_T, end_freq, method, phaseInit);
 
+freq = start_freq:0.1:end_freq;
+
+stop = length(freq);
 for i = 1:length(freq) 
-    [mag,~] = bode(u_sat/CS, 2*pi*freq(i));
-    limit(i) = mag;
+    [mag,~] = bode((CS*amplitude)/(u_sat), 2*pi*freq(i));
+    if (mag >= 1)
+       stop = i;
+       break
+    end
 end
 
-sweep_expected = limit .* sin(2*pi*t.*freq);
+%start_freq = freq(stop);
+end_freq = freq(stop);
 
-epsilon = 0.0001;
-saturation_reached_at = -1;
-for i = 1:length(sweep)
-   if (sweep(i) > 0 && sweep(i) > sweep_expected(i) + epsilon)
-       saturation_reached_at = i;
-       break;
-   end
-   if (sweep(i) < 0 && sweep(i) < sweep_expected(i) - epsilon)
-       saturation_reached_at = i;
-       break;
-   end
-end
-
-suggested_sweep = sweep;
-if (saturation_reached_at > 0)
-    suggested_sweep(saturation_reached_at:end) = sweep_expected(saturation_reached_at:end);
-end
+t = start_T:dt:end_T;
+phaseInit = -90;
+method = 'linear';
+suggested_sweep = amplitude * chirp(t, start_freq, end_T, end_freq, method, phaseInit);
 
 options = bodeoptions;
 options.FreqUnits = 'Hz';
