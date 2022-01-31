@@ -1,37 +1,37 @@
 figure;
 subplot(221);
-plot(theta_des.time,theta_des.signals.values);
+plot(theta_des.time,theta_des.Data);
 hold on;
-plot(theta_m.time,theta_m.signals.values);
+plot(theta_m.time,theta_m.Data);
 xlabel('time');
-ylabel('position');
-legend('theta\_des', 'theta\_m');
-title('Original signal');
+ylabel('tau');
+legend('tau\_des', 'tau\_e');
+title('Suggested signal');
 
 hold off;
 
 subplot(223);
-plot(current.time, current.signals.values);
+plot(current.time, current.Data);
 title('Motor current');
-yline(2.26,'-', "saturation");
-yline(-2.26,'-');
+yline(2.35,'-', "saturation");
+yline(-2.35,'-');
 xlabel('time');
 ylabel('current');
 
 subplot(222);
-plot(theta_des1.time,theta_des1.signals.values);
+plot(theta_des1.time,theta_des1.Data);
 hold on;
-plot(theta_m1.time,theta_m1.signals.values);
+plot(theta_m1.time,theta_m1.Data);
 xlabel('time');
-ylabel('position');
-legend('theta\_des', 'theta\_m');
-title('Suggested signal');
+ylabel('tau');
+legend('tau\_des', 'tau\_e');
+title('Original signal');
 hold off;
 
 subplot(224);
-plot(current1.time, current1.signals.values);
+plot(current1.time, current1.Data);
 title('Motor current');
-yline(2.26,'-', "saturation");
-yline(-2.26,'-');
+yline(2.35,'-', "saturation");
+yline(-2.35,'-');
 xlabel('time');
 ylabel('current');

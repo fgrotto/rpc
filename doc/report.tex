@@ -52,17 +52,23 @@ If we consider the general feedback system in Fig.\ref{fig:feedback}. There are 
 \noindent The equation \eqref{eqn:current_sat} holds since we want $u$ to not overcome the provided saturation. However a more strict condition can be imposed. We can then write:
 
 \begin{equation}
-  \frac{u}{u_{sat}} = CS(s) \frac{r}{u_{sat}}
+  \frac{u}{u_{sat}} = |CS(s)| \frac{r}{u_{sat}}
 \end{equation}
 
 \noindent Considering the worst case scenario when $u/u_{sat}=1$ we can derive:
 
 \begin{equation}
-  r < \frac{u_{sat}}{CS(s)}
+  r < \frac{u_{sat}}{|CS(s)|}
   \label{eqn:saturation_limit}
 \end{equation}
 
-\noindent Note that equation \eqref{eqn:saturation_limit} uses mixed time and laplace domain notations. In the following sections only the magnitude of the transfer function will be considered. 
+\noindent An equivalent condition for unitary input is:
+\begin{equation}
+  \frac{|CS(s)|}{u_{sat}} < 1 (0db)
+  \label{eqn:saturation_limit2}
+\end{equation}
+
+\noindent Note that equation \eqref{eqn:saturation_limit} and \eqref{eqn:saturation_limit2} use mixed time and laplace domain notations. In the following sections only the magnitude of the transfer function will be considered. 
 
 \newpage
 \section{Control Architectures}
@@ -72,66 +78,53 @@ Our aim is to replace the input of the different architectures with a correctly 
 
 \noindent The following code was used to generate the reference signal:
 
-\begin{lstlisting}[basicstyle=\small]
-function [sweep, suggested_sweep, t] = reference_signal(start_T, end_T, 
-                start_freq, end_freq, duration, amplitude, u_sat, CS, dt)
-
-
-  t = linspace(start_T, end_T, duration/dt);
-  sweep = amplitude * sin(2*pi*t.*
-          (start_freq + ((end_freq-start_freq)/(duration))*t));
-  freq = (start_freq + ((end_freq-start_freq)/(duration))*t);
-
-  for i = 1:length(freq) 
-      [mag,~] = bode(u_sat/CS, 2*pi*freq(i));
-      limit(i) = exp(mag/20); % Exponential decay
-  end
-
-  sweep_expected = limit .* sin(2*pi*t.*freq);
-
-  epsilon = 0.001;
-  saturation_reached_at = -1;
-  for i = 1:length(sweep)
-     if (sweep(i) > 0 && sweep(i) > sweep_expected(i) + epsilon)
-         saturation_reached_at = i;
-         break;
-     end
-     if (sweep(i) < 0 && sweep(i) < sweep_expected(i) - epsilon)
-         saturation_reached_at = i;
-         break;
-     end
+\bigskip
+\begin{lstlisting}
+  % Calculate time and frequencies vectors (they must have the same length)
+  t = start_T:dt:end_T;
+  freq = start_freq + ((end_freq-start_freq)/duration * t);
+  
+  % Build original swept function
+  sweep = amplitude * chirp(t, start_freq, end_T, end_freq, 'linear', -90);
+  
+  % Compute the magnitude vector /m
+  [magnitude_vector,~] = bode((CS*amplitude)/(u_sat), 2*pi*freq);
+  
+  % Calculate deamplification factor only when the magnitude is larger than
+  % 0db (1 in linear scale).
+  deamplification = zeros(1,size(magnitude_vector, 3));
+  for i = 1:size(magnitude_vector,3)
+      if magnitude_vector(:,:,i) >= 1 
+          deamplification(i) = amplitude/magnitude_vector(:,:,i);
+      else
+          deamplification(i) = amplitude;
+      end
   end
   
-  suggested_sweep = sweep;
-  if (saturation_reached_at > 0)
-      suggested_sweep(saturation_reached_at:end) = 
-              sweep_expected(saturation_reached_at:end);
-  end
-end
+  % Build the suggested sweep
+  suggested_sweep = deamplification .* chirp(t, start_freq,
+                                      end_T, end_freq, 'linear', -90);
 \end{lstlisting}
+
+\smallskip
+\noindent Briefly, the idea is to use the magnitude of the trasfer function \eqref{eqn:saturation_limit3} to scale the reference only when we exceed 0db (1 in linear scale). That means we allow the user to define the reference and we scale only when we can't guarantee the saturation limits (forcing, in that scenario, the maximum current available).
+
+\smallskip
+\begin{equation}
+  \frac{|CS(s)|amplitude}{u_{sat}} 
+  \label{eqn:saturation_limit3}
+\end{equation}
 
 \newpage
 
 \subsection{Parameters Used}
 
 \bigskip
-The parameters used for the motor comes from direct identification of a maxon DCX22L, in particular $J_m = 0.0064$, $d_m = 0.0068$, $K_t = 1.46$ and $u_{sat} = 2.26$. The controller used for all the architectures is a PID/PD controller with different parameters. To give and example $P = 15$, $D = 0.1$ and $I = 0.1$. In the force control case the stiffness of the environment was considered $h = 100$.
+The parameters used for the motor comes from direct identification of a maxon DCX22L, in particular $J_m = 0.0064Kgm^2$, $d_m = 0.0068Nms$, $K_t = 1.46$ and $u_{sat} = 2.26A$. The controller used for all the architectures is a PID/PD controller with different parameters.
 
 \bigskip
 \subsection{Position Control}
-Let's consider a basic position control architecture for a linear motor model considering only the mechanical subsystem as depicted in Fig \ref{fig:position_control}
-
-
-\begin{figure}[H]
-\begin{center}
-\includegraphics[width=1\textwidth]{images/position.png}
-\end{center}
-\caption{Simulink model of position control architecture}
-\label{fig:position_control}
-\end{figure}
-
-\bigskip
-\noindent The related equations of the plant $P_l$ and the PD controller $C$ are:
+Let's consider a basic position control architecture for a linear motor model considering only the mechanical subsystem. The related equations of the plant $P_l$ and the PD controller $C$ are:
 
 \[
 P_l = \frac{1}{J_m s^2 + d_m s} \qquad
@@ -139,9 +132,9 @@ C = P + Ds
 \]
 
 \bigskip
-\noindent The two transfer functions $T(S)$ ($r$ to $y$) and $CS(s)$ ($r$ to $u$) are presented in Fig \ref{fig:position_tf} and the related original and suggested reference signal are reported in Fig \ref{fig:position_ref}. As it is visible the suggested approach is pretty aggressive especially due to the $epsilon$ considered in the $reference\_signal$ function presented above, moreover we are considering a worst case scenario.
+\noindent The two transfer functions $T(S)$ ($r$ to $y$) and $CS(s)$ ($r$ to $u$) are presented in Fig \ref{fig:position_tf}.
 
-\noindent For simplicity only a case to fully understand the potential of this approach is reported. Other experiments can be performed to get familiar with how this approach works in real scenario. Moreover more sophisticated motor model with the electrical subsystem can be considered.
+\noindent For simplicity only few cases to fully understand the potential of this approach are reported. Other experiments can be performed to get familiar with how this approach works in real scenario. Moreover more sophisticated motor model with the electrical subsystem can be considered.
 
 \begin{figure}[H]
 \begin{center}
@@ -151,92 +144,66 @@ C = P + Ds
 \label{fig:position_tf}
 \end{figure}
 
-
-\begin{figure}[H]
-\begin{center}
-\includegraphics[width=0.8\textwidth]{images/decay.eps}
-\end{center}
-\caption{Linear decay factor obtained from $u_{sat}/CS(s)$ in the range of frequencies 1Hz to 10Hz}
-\label{fig:position_ref}
-\end{figure}
-
 \newpage
 
-\subsubsection{Modulated reference with original decay}
-\noindent Let's try to see the result of this approach without smoothing of the magnitude decay. Originally the trasfer function $CS(s)$ tends to be really aggressive and cutting a lot of signal.
+\subsubsection{Modulated reference}
+\noindent As it is visible the reference requires high current in order to be performed, the code scaled the signal as soon as we reached the saturation in order to guarantee the saturation limits.
 
 \begin{figure}[H]
 \begin{center}
 \hspace*{-5cm}
 \includegraphics[width=1.6\textwidth]{images/position_tau2.eps}
 \end{center}
-\caption{Comparison of the original position signal with the suggested saturation aware one. In this case the original decay was used}
+\caption{Comparison of the original position signal with the suggested saturation aware one}
 \label{fig:position_tau}
 \end{figure}
 
-What is visible is the fact that the decay is pretty agressive and it starts at 2Hz which is pretty early considering practical experiences of the motor data provided. In the following section we will try a modulated decay to improve the performances based on experiments on the trasfer function.
+To obtain Fig \ref{fig:position_tau} a PD with $P = 10$ and $D = 0.9$ was used. The current saturation is $2.26$A, and the sweep signal goes from 1 to 10 Hz in 10 seconds. The motor used is the one described in the parameters section.
 
 \newpage
-\subsubsection{Modulated reference with augmented decay}
-\noindent Let's compare the different responses we obtain using the original and the scaled signal, finally let's compare the actual current of the motor (saturation at $u_{sat} = 2.26$). The modulated decay is calculated as $modulated\_decay = exp(decay/20)$:
-
-\begin{figure}[H]
-\begin{center}
-\hspace*{-5cm}
-\includegraphics[width=1.6\textwidth]{images/position_tau.eps}
-\end{center}
-\caption{Comparison of the original position signal with the suggested saturation aware}
-\label{fig:position_tau}
-\end{figure}
-
-\noindent The important aspect that plays an important role is the tuning of the controller which have to be appropriate, a sample is reported in Fig \ref{fig:position_step_response}. In case of bad tuning the suggested signal will be strongly deamplified as a result of considering a worst case scenario.
-
-\begin{figure}[H]
-\begin{center}
-\includegraphics[width=0.3\textwidth]{images/position_step_resp.eps}
-\end{center}
-\caption{Step response of the system}
-\label{fig:position_step_response}
-\end{figure}
-  
-\newpage
-\subsection{Force Control}
-Let's consider a basic force control architecture for a linear motor model considering only the mechanical subsystem and a PD+FF controller. For simplicity only the environment stiffness $h$ (in rigid conditions):
-
-\begin{figure}[H]
-\begin{center}
-\includegraphics[width=1\textwidth]{images/force.png}
-\end{center}
-\caption{Simulink model of force control architecture}
-\label{fig:force_control}
-\end{figure}
-
-\noindent The related equations of the plant $P_l$ and the PD controller $C$ are:
+\subsection{Velocity Control}
+Let's consider a basic velocity control architecture for a linear motor model considering only the mechanical subsystem. The related equations of the plant $P_l$ and the PI controller $C$ are:
 
 \[
-G = \frac{1}{\frac{J_m}{h}s^2 + \frac{d_m}{h}s + 1} \qquad
+P_l = \frac{1}{J_m s + d_m} \qquad
+C = P + \frac{I}{s}
+\]
+
+\bigskip
+\noindent The two transfer functions $T(S)$ ($r$ to $y$) and $CS(s)$ ($r$ to $u$) are presented in Fig \ref{fig:velocity_tf}.
+
+\begin{figure}[H]
+  \begin{center}
+  \includegraphics[width=0.8\textwidth]{images/velocity_tf.eps}
+  \end{center}
+  \caption{Velocity control bode plot of the complementary sensitivity function and noise sensitivity function}
+  \label{fig:velocity_tf}
+  \end{figure}
+\bigskip 
+
+It is important to notice that the noise sensitivity function in Fig \ref{fig:velocity_tf} doesn't reach the 0db level so it means we can't reach saturation with unitary references. However the amplitude of the reference (when > 1) will shift the transfer function and it will eventually reach 0db leading to current saturation.
+
+\newpage
+\subsubsection{Modulated reference}
+\noindent As it is visible the reference requires high current in order to be performed, the code scaled the signal as soon as we reached the saturation in order to guarantee the saturation limits.
+\begin{figure}[H]
+  \begin{center}
+  \hspace*{-5cm}
+  \includegraphics[width=1.6\textwidth]{images/velocity_tau.eps}
+  \end{center}
+  \caption{Comparison of the original velocity signal with the suggested saturation aware one}
+  \label{fig:velocity_tau}
+  \end{figure}
+
+  To obtain Fig \ref{fig:velocity_tau} a PD with $P = 0.2$ and $I = 2$ was used. The current saturation is $0.5$A, and the sweep signal goes from 1 to 10 Hz in 10 seconds. The motor used is the one described in the parameters section.
+
+\newpage
+\subsection{Basic Force Control}
+Let's consider a basic force control architecture for a linear motor model considering only the mechanical subsystem and a PD controller. I will assume only some stiffness $h$ following the analysis in \cite{eppinger}. The related equations of the plant $P_l$ and the PD controller $C$ are:
+
+\[
+G = P_{l} = \frac{1}{\frac{J_m}{h}s^2 + \frac{d_m}{h}s + 1} \qquad
 C = P + Ds;                             
-\]
-
-\bigskip
-\noindent The two transfer functions $T(S)$ ($r$ to $y$) and $CS(s)$ ($r$ to $u$) are presented in Fig \ref{fig:force_tf} and the related original and suggested reference signal are reported in Fig \ref{fig:force_ref}. As it is visible the suggested approach is pretty aggressive especially due to the $epsilon$ considered in the $reference\_signal$ function presented above, moreover we are considering a worst case scenario.
-
-\bigskip
-\noindent To derive the $CS$ trasfer function the following equations were considered:
-
-\[
-  \tau_m = \tau_{des} + C(\tau_{des} - \tau_e)
-\]
-\[
-  \tau_m = \tau_{des} + C\tau_{des} - \frac{CG(C+1)}{1+CG}\tau_{des}
-\]
-\[
-  \tau_m = \bigg(1 + C - \frac{CG(1+C)}{1+CG}\bigg)\tau_{des}
-\]
-
-We can easily recognize $T$ as:
-\[
-  \tau_e = \frac{CG(1+C)}{1+CG}\tau_{des}
 \]
 
 \bigskip
@@ -248,25 +215,22 @@ We can easily recognize $T$ as:
 \label{fig:force_tf}
 \end{figure}
 
+\bigskip 
+It is important to notice that the peak in the noise sensitivity function in Fig \ref{fig:force_tf} depends on the stiffness of the environment and it can't be eliminated. However our method consider the amplification only when the transfer function exceeds 0db so the peak is always neglected.
 
-\begin{figure}[H]
-\begin{center}
-\includegraphics[width=0.8\textwidth]{images/force_scaled.eps}
-\end{center}
-\caption{original and scaled sweep for the force reference. As it is visible we have a different behaviour than the position control due to a completly different $CS(s)$ transfer function}
-\label{fig:force_ref}
-\end{figure}
-
-\noindent Let's compare the different responses we obtain using the original and the scaled signal, finally let's compare the actual current of the motor (saturation at $u_{sat} = 2.26$) :
-
+\newpage
+\subsubsection{Modulated reference}
+\noindent As it is visible the reference requires high current in order to be performed, the code scaled the signal as soon as we reached the saturation in order to guarantee the saturation limits.
 \begin{figure}[H]
   \begin{center}
   \hspace*{-5cm}
   \includegraphics[width=1.6\textwidth]{images/force_tau.eps}
   \end{center}
-  \caption{Comparison of the original force signal with the suggested saturation aware}
+  \caption{Comparison of the original force signal with the suggested saturation aware one}
   \label{fig:force_tau}
   \end{figure}
+
+  To obtain Fig \ref{fig:force_tau} a PD with $P = 10$ and $D = 0.9$ was used. The current saturation is $2.26$A, and the sweep signal goes from 1 to 10 Hz in 10 seconds. The motor used is the one described in the parameters section. The stiffness of the environment is $2Nm/rad$.
 
 \section{Limitations}
 
@@ -274,31 +238,14 @@ The current approach based on the use of the transfer function $CS(s)$ has lots 
 \begin{itemize}
   \item The approach assumes full knowledge of the considered system, everything has to be identified correctly and this is even a bigger limitation for force control because we don't have informations about the environment which makes the use of the transfer functions not reliable at all.
   \item We assume a linear system which is a big limitation since it doesn't consider non-linear behaviours of the DC motors. For this cases having at least one real experiment to validate the data is a must.
-  \item The use of $CS(s)$ is not reliable in some scenarios due to accentuated shapes of the transfer function in Fig \ref{fig:sea_tf} the transfer function of a SEA with links is reported as well as its relevant equations.
 \end{itemize}
-
-\begin{figure}[H]
-\begin{center}
-\includegraphics[width=0.8\textwidth]{images/sea_tf.eps}
-\end{center}
-\caption{SEA with link force control bode plot of the complementary sensitivity function and noise sensitivity function}
-\label{fig:sea_tf}
-\end{figure}
-
-\[
-  r = \frac{Ks}{Ke} \qquad
-  E = \frac{J_e}{K_e}s^2 + \frac{B_e}{K_e}s + 1;
-\]\[
-  F = \frac{E}{(E + r)\frac{J_m}{K_s}s^2 + E} \qquad
-  C = P + Ds;    
-\]
 
 \section{Other approaches}
 
-Simulating the experiments in simulink is in general a good way to verify the presence of saturation but it is affected by the same problems related to prior knowledge and linear behaviours (at least without implementing a non-linear system). A good way to generate a current saturation aware reference signal is adapting the reference in real time by reading directly the current provided to the motor. If this exceeds a certain threasold just drop a certain percentage. With this approach we can't know a priori the "amplitude shape" of the signal but it will be recovered after the experiments (using the log captured by the Forecast system). The bandwith estimation can be performed using the Matlab toolbox over that data.
+Simulating the experiments in simulink is in general a good way to verify the presence of saturation but it is affected by the same problems related to prior knowledge and linear behaviours (at least without implementing a non-linear system). A good way to generate a current saturation aware reference signal is adapting the reference in real time by reading directly the current provided to the motor. If this exceeds a certain threasold just drop a certain percentage. The bandwith estimation can be performed using the Matlab toolbox over that data.
 
 \section{Conclusions}
-The report is an attempt to provide a way to generate current saturation aware signals using noise sensitivity trasfer function. The basic idea was provided as well as some simulation results. The main limitations and other possibilities were discussed and analysed.
+The report is an attempt to provide a way to generate current saturation aware signals using noise sensitivity trasfer function. The reported approach is pretty flexible and can be extended to guarantee also voltage or velocity limits as in \cite{Performance}. The basic idea was provided as well as some simulation results. The main limitations and other possibilities were discussed and analysed.
 
 \begin{thebibliography}{9}
 
@@ -307,8 +254,13 @@ Forecast Project https://eurobench2020.eu/developing-the-framework/force-control
 
 \bibitem{scientist}
 Karl Johan Astrom, Richard M. Murray Feedback Systems An Introduction for Scientists and Engineers
-\end{thebibliography}
 
+\bibitem{Performance}
+Chan Lee, Sehoon Oh Performance Analysis of Series Elastic Actuator based on Maximum Torque Transmissibility
+
+\bibitem{eppinger}
+Eppinger, Seering Introduction to Dynamic Models for Robot Force Control 
+\end{thebibliography}
 \end{document}
 
 
