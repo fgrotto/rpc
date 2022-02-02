@@ -12,11 +12,13 @@ dm = 0.0068;
 kt = 1.5038;
 u_sat = 2.26 * kt;
 
+% Sea spring
+k = 30;
+
 % Environment parameters
-Ks = 10; % Spring
-Ke = 50;
-Je = 0;
-Be = 0.2;
+h = 10;
+J = 0;
+d = 0.2;
 
 % Signal parameters
 start_T = 0;
@@ -25,17 +27,15 @@ duration = end_T - start_T;
 dt = 0.0001;
 start_freq = 1;
 end_freq = 10;
-amplitude = 4;
+amplitude = 2;
 
 % Force Control transfer functions
 s = tf('s');
 
-% r = Ks / Ke;
-% E = (Je / Ke) * s^2 + (Be / Ke) * s + 1;
-% F = E / ((E + r) * (Jm / Ks) * s^2 + E);
+M = 1/(Jm*s^2+dm*s);
+E = 1/(J*s^2+d*s+h);
 
-E = 1 / (Je*s^2+Be*s+Ke);
-F = Ks / (Jm*s^2*(1+E*Ks)+dm*s*(1+E*Ks)+E*Ks);
+F = k*M / (1+k*E+k*M);
 C = P + D * s;
 
 L = C * F;

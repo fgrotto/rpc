@@ -6,7 +6,7 @@ P = 10;
 D = 0.9;
 
 % Motor Parameters
-Jm = 0.0104;
+Jm = 0.0204;
 dm = 0.0068;
 kt = 1.5038;
 u_sat = 2.26 * kt;
@@ -18,7 +18,7 @@ duration = end_T - start_T;
 dt = 0.001;
 start_freq = 1;
 end_freq = 10;
-amplitude = 4;
+amplitude = 0.1;
 
 % Position Control transfer functions
 s = tf('s');

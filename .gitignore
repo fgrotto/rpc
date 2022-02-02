@@ -1,5 +1,6 @@
 *.slxc
 slprj/*
+other/*
 *.aux
 *.log
 *.gz
